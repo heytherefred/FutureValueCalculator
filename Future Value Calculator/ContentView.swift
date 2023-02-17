@@ -6,85 +6,153 @@
 //
 
 import SwiftUI
-import CoreData
 
 struct ContentView: View {
-    @Environment(\.managedObjectContext) private var viewContext
-
-    @FetchRequest(
-        sortDescriptors: [NSSortDescriptor(keyPath: \Item.timestamp, ascending: true)],
-        animation: .default)
-    private var items: FetchedResults<Item>
-
-    var body: some View {
-        NavigationView {
-            List {
-                ForEach(items) { item in
-                    NavigationLink {
-                        Text("Item at \(item.timestamp!, formatter: itemFormatter)")
-                    } label: {
-                        Text(item.timestamp!, formatter: itemFormatter)
-                    }
-                }
-                .onDelete(perform: deleteItems)
-            }
-            .toolbar {
-#if os(iOS)
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    EditButton()
-                }
-#endif
-                ToolbarItem {
-                    Button(action: addItem) {
-                        Label("Add Item", systemImage: "plus")
-                    }
-                }
-            }
-            Text("Select an item")
-        }
-    }
-
-    private func addItem() {
-        withAnimation {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
-
-    private func deleteItems(offsets: IndexSet) {
-        withAnimation {
-            offsets.map { items[$0] }.forEach(viewContext.delete)
-
-            do {
-                try viewContext.save()
-            } catch {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-                let nsError = error as NSError
-                fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-            }
-        }
-    }
+	@ObservedObject var viewModel = CalcViewModel()
+	@State private var showErrors = false
+	
+	var body: some View {
+		NavigationStack {
+			Form {
+				
+				VStack {
+					HStack {
+						
+						HStack {
+							Image(systemName: "dollarsign")
+							FieldTextView("Present Value", text: $viewModel.presentValue.text, errorMessage: viewModel.presentValueErrorMessage)
+						}
+						//						Text("\(viewModel.presentValue.text)")
+						
+						CalculateButtonView(valid: $viewModel.validForPresentValueCalc, action: {
+							
+							viewModel.calculationName = CalcName.presentValue
+							if(!viewModel.validForPresentValueCalc) {
+								return
+							}
+							
+							viewModel.presentValue.value = NSNumber(value: Calculations.presentValue(
+								futureValue: viewModel.futureValue.value!.doubleValue,
+								interestRate: viewModel.interestRate.value!.doubleValue,
+								numberPeriods: viewModel.numberPeriods.value!.doubleValue))
+						})
+					}
+					HStack {
+						HStack {
+							FieldTextView("Interest Rate", text: $viewModel.interestRate.text, errorMessage: viewModel.interestRateErrorMessage)
+							Image(systemName: "percent")
+						}
+						//						Text("\(viewModel.interestRate.text)")
+						CalculateButtonView(valid: $viewModel.validForInterestRateCalc, action: {
+							viewModel.calculationName = CalcName.interestRate
+							if(!viewModel.validForInterestRateCalc) {
+								return
+							}
+							viewModel.interestRate.value = NSNumber(value: Calculations.interestRate(
+								presentValue: viewModel.presentValue.value!.doubleValue,
+								futureValue: viewModel.futureValue.value!.doubleValue,
+								numberPeriods: viewModel.numberPeriods.value!.doubleValue))
+						})
+					}
+					HStack {
+						FieldTextView("Number of Periods", text: $viewModel.numberPeriods.text, errorMessage: viewModel.numberPeriodsErrorMessage)
+						//						Text("\(viewModel.numberPeriods.text)")
+						
+						CalculateButtonView(valid: $viewModel.validForPeriodCalc, action: {
+							viewModel.calculationName = CalcName.numberPeriods
+							if(!viewModel.validForPeriodCalc) {
+								return
+							}
+							viewModel.numberPeriods.value = NSNumber(value: Calculations.numberPeriods(
+								presentValue: viewModel.presentValue.value!.doubleValue,
+								futureValue: viewModel.futureValue.value!.doubleValue,
+								interestRate: viewModel.interestRate.value!.doubleValue))
+						})
+					}
+					HStack {
+						HStack {
+							Image(systemName: "dollarsign")
+							FieldTextView("Future Value", text: $viewModel.futureValue.text, errorMessage: viewModel.futureValueErrorMessage)
+						}
+						//						Text("\(viewModel.futureValue.text)")
+						
+						CalculateButtonView(valid: $viewModel.validForFutureValueCalc, action: {
+							viewModel.calculationName = CalcName.futureValue
+							if(!viewModel.validForFutureValueCalc) {
+								return
+							}
+							
+							viewModel.futureValue.value = NSNumber(value: Calculations.futureValue(
+								presentValue: viewModel.presentValue.value!.doubleValue,
+								interestRate: viewModel.interestRate.value!.doubleValue,
+								numberPeriods: viewModel.numberPeriods.value!.doubleValue))
+							
+						})
+					}
+					
+				}.navigationTitle("Future Value Calc")
+			}
+		}
+	}
 }
 
-private let itemFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateStyle = .short
-    formatter.timeStyle = .medium
-    return formatter
-}()
-
 struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView().environment(\.managedObjectContext, PersistenceController.preview.container.viewContext)
-    }
+	static var previews: some View {
+		ContentView()
+	}
+}
+
+struct CalculateButtonView: View {
+	
+	@Binding private var valid: Bool
+	let action: () -> Void
+	
+	init(valid: Binding<Bool>, action: @escaping () -> Void) {
+		self._valid = valid
+		self.action = action
+	}
+	var body: some View {
+		
+		Button(action: self.action)
+		{
+			Text("Calculate")
+				.foregroundColor(.white)
+				.padding(.vertical, 5)
+				.padding(.horizontal)
+				.background(Capsule().fill(Color.accentColor))
+		}
+		.opacity(valid ? 1 : 0.6)
+		//		.disabled(!valid)
+		.buttonStyle(BorderlessButtonStyle())
+	}
+}
+
+
+struct FieldTextView: View {
+	@Binding var text: String
+	var errorMessage: String
+	var label: String
+	
+	init(_ label: String, text: Binding<String>, errorMessage: String) {
+		self.label = label
+		self._text = text
+		self.errorMessage = errorMessage
+	}
+	
+	var body: some View {
+		VStack {
+			ZStack(alignment: .leading) {
+				Text(label)
+					.foregroundColor(text.isEmpty ? Color(.placeholderText) : .accentColor)
+					.offset(y: (text.isEmpty ? 0 : -25))
+					.scaleEffect(text.isEmpty ? 1 : 0.8, anchor: .leading)
+				TextField("", text: $text)
+					.keyboardType(.numberPad)
+			}
+			.padding(.top, 15)
+			.animation(.default, value: text)
+			
+			Text(errorMessage).font(.caption).foregroundColor(.red)
+		}
+	}
 }
